@@ -164,7 +164,9 @@ async function initializeGemini(profile = 'interview', language = 'en-US') {
 // Listen for status updates
 ipcRenderer.on('update-status', (event, status) => {
     console.log('Status update:', status);
-    cheddar.setStatus(status);
+    if (window.cheddar && typeof window.cheddar.setStatus === 'function') {
+        window.cheddar.setStatus(status);
+    }
 });
 
 // Listen for responses - REMOVED: This is handled in CheatingDaddyApp.js to avoid duplicates
@@ -173,6 +175,14 @@ ipcRenderer.on('update-status', (event, status) => {
 //     cheddar.e().setResponse(response);
 //     // You can add UI elements to display the response if needed
 // });
+
+// In the React-based UI, route responses through the global cheddar UI API
+ipcRenderer.on('update-response', (event, response) => {
+    console.log('Gemini response:', response);
+    if (window.cheddar && typeof window.cheddar.setResponse === 'function') {
+        window.cheddar.setResponse(response);
+    }
+});
 
 async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'medium') {
     // Store the image quality for manual screenshots
@@ -734,35 +744,46 @@ ipcRenderer.on('clear-sensitive-data', () => {
 
 // Handle shortcuts based on current view
 function handleShortcut(shortcutKey) {
-    const currentView = cheddar.getCurrentView();
+    const currentView = window.cheddar ? window.cheddar.getCurrentView() : 'main';
 
     if (shortcutKey === 'ctrl+enter' || shortcutKey === 'cmd+enter') {
         if (currentView === 'main') {
-            cheddar.element().handleStart();
+            if (window.cheddar && typeof window.cheddar.handleStart === 'function') {
+                window.cheddar.handleStart();
+            }
         } else {
             captureManualScreenshot();
         }
     }
 }
 
-// Create reference to the main app element
-const cheatingDaddyApp = document.querySelector('cheating-daddy-app');
+// Consolidated cheddar object - all functions in one place.
+// The UI layer (now React) can attach its own implementation via attachUI.
+let cheddarUI = null;
 
-// Consolidated cheddar object - all functions in one place
 const cheddar = {
-    // Element access
-    element: () => cheatingDaddyApp,
-    e: () => cheatingDaddyApp,
+    // Called by the React UI to register its callbacks
+    attachUI: ui => {
+        cheddarUI = ui || null;
+    },
 
-    // App state functions - access properties directly from the app element
-    getCurrentView: () => cheatingDaddyApp.currentView,
-    getLayoutMode: () => cheatingDaddyApp.layoutMode,
+    // App state functions exposed to the main process
+    getCurrentView: () => (cheddarUI && typeof cheddarUI.getCurrentView === 'function' ? cheddarUI.getCurrentView() : 'main'),
+    getLayoutMode: () => (cheddarUI && typeof cheddarUI.getLayoutMode === 'function' ? cheddarUI.getLayoutMode() : 'normal'),
 
-    // Status and response functions
-    setStatus: text => cheatingDaddyApp.setStatus(text),
-    setResponse: response => cheatingDaddyApp.setResponse(response),
+    // Status and response functions (called from IPC handlers above)
+    setStatus: text => {
+        if (cheddarUI && typeof cheddarUI.setStatus === 'function') {
+            cheddarUI.setStatus(text);
+        }
+    },
+    setResponse: response => {
+        if (cheddarUI && typeof cheddarUI.setResponse === 'function') {
+            cheddarUI.setResponse(response);
+        }
+    },
 
-    // Core functionality
+    // Core functionality exposed to the UI
     initializeGemini,
     startCapture,
     stopCapture,
