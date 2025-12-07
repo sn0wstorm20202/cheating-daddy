@@ -82,6 +82,48 @@ function requestResize() {
     } catch (e) {}
 }
 
+const KEYBIND_ACTIONS = [
+    { key: 'moveUp', name: 'Move Window Up', description: 'Move the application window up' },
+    { key: 'moveDown', name: 'Move Window Down', description: 'Move the application window down' },
+    { key: 'moveLeft', name: 'Move Window Left', description: 'Move the application window left' },
+    { key: 'moveRight', name: 'Move Window Right', description: 'Move the application window right' },
+    { key: 'toggleVisibility', name: 'Toggle Window Visibility', description: 'Show or hide the application window' },
+    {
+        key: 'toggleClickThrough',
+        name: 'Toggle Click-through Mode',
+        description: 'Enable or disable click-through for the window',
+    },
+    {
+        key: 'nextStep',
+        name: 'Ask Next Step',
+        description: 'Take a screenshot and ask AI for the next step suggestion',
+    },
+    { key: 'previousResponse', name: 'Previous Response', description: 'Navigate to the previous AI response' },
+    { key: 'nextResponse', name: 'Next Response', description: 'Navigate to the next AI response' },
+    { key: 'scrollUp', name: 'Scroll Response Up', description: 'Scroll the AI response content up' },
+    { key: 'scrollDown', name: 'Scroll Response Down', description: 'Scroll the AI response content down' },
+];
+
+function getDefaultKeybinds() {
+    const isMac =
+        (typeof window !== 'undefined' && window.cheddar && window.cheddar.isMacOS) ||
+        (typeof navigator !== 'undefined' && navigator.platform.includes('Mac'));
+
+    return {
+        moveUp: isMac ? 'Alt+Up' : 'Ctrl+Up',
+        moveDown: isMac ? 'Alt+Down' : 'Ctrl+Down',
+        moveLeft: isMac ? 'Alt+Left' : 'Ctrl+Left',
+        moveRight: isMac ? 'Alt+Right' : 'Ctrl+Right',
+        toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
+        toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
+        nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
+        previousResponse: isMac ? 'Cmd+[' : 'Ctrl+[',
+        nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
+        scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
+        scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
+    };
+}
+
 function Header(props) {
     const {
         currentView,
@@ -90,6 +132,9 @@ function Header(props) {
         advancedMode,
         isClickThrough,
         onSettings,
+        onHelp,
+        onHistory,
+        onAdvanced,
         onClose,
         onBack,
         onHide,
@@ -144,6 +189,9 @@ function Header(props) {
         main: 'Cheating Daddy',
         assistant: 'Cheating Daddy',
         settings: 'Settings',
+        help: 'Help & Shortcuts',
+        history: 'Conversation History',
+        advanced: 'Advanced Tools',
     };
 
     const title = titles[currentView] || 'Cheating Daddy';
@@ -188,21 +236,42 @@ function Header(props) {
                 : null,
             currentView === 'main'
                 ? React.createElement(
-                      'button',
-                      { style: buttonStyle, onClick: onSettings },
-                      advancedMode ? 'Settings' : 'Settings',
+                      React.Fragment,
+                      null,
+                      React.createElement(
+                          'button',
+                          { style: buttonStyle, onClick: onHistory },
+                          'History',
+                      ),
+                      advancedMode
+                          ? React.createElement(
+                                'button',
+                                { style: buttonStyle, onClick: onAdvanced },
+                                'Advanced',
+                            )
+                          : null,
+                      React.createElement(
+                          'button',
+                          { style: buttonStyle, onClick: onHelp },
+                          'Help',
+                      ),
+                      React.createElement(
+                          'button',
+                          { style: buttonStyle, onClick: onSettings },
+                          'Settings',
+                      ),
                   )
                 : null,
             currentView === 'assistant'
                 ? React.createElement(
                       'button',
                       { style: iconButtonStyle, onClick: onClose },
-                      '✕',
+                      'X',
                   )
                 : React.createElement(
                       'button',
                       { style: iconButtonStyle, onClick: currentView === 'main' ? onClose : onBack },
-                      currentView === 'main' ? '✕' : '← Back',
+                      currentView === 'main' ? 'X' : 'Back',
                   ),
         ),
     );
@@ -283,7 +352,6 @@ function MainView(props) {
         fontSize: 14,
         marginBottom: 24,
     };
-
     const linkStyle = {
         color: 'var(--link-color)',
         textDecoration: 'underline',
@@ -339,6 +407,188 @@ function SettingsView(props) {
         setAdvancedMode,
     } = props;
 
+    const [customPrompt, setCustomPrompt] = useState(() => {
+        try {
+            return localStorage.getItem('customPrompt') || '';
+        } catch (e) {
+            return '';
+        }
+    });
+
+    const [audioMode, setAudioMode] = useState(() => {
+        try {
+            return localStorage.getItem('audioMode') || 'speaker_only';
+        } catch (e) {
+            return 'speaker_only';
+        }
+    });
+
+    const [stealthProfile, setStealthProfile] = useState(() => {
+        try {
+            return localStorage.getItem('stealthProfile') || 'balanced';
+        } catch (e) {
+            return 'balanced';
+        }
+    });
+
+    const [googleSearchEnabled, setGoogleSearchEnabled] = useState(() => {
+        try {
+            const stored = localStorage.getItem('googleSearchEnabled');
+            return stored === null ? true : stored === 'true';
+        } catch (e) {
+            return true;
+        }
+    });
+
+    const [backgroundTransparency, setBackgroundTransparency] = useState(() => {
+        try {
+            const stored = localStorage.getItem('backgroundTransparency');
+            return stored !== null ? parseFloat(stored) || 0.8 : 0.8;
+        } catch (e) {
+            return 0.8;
+        }
+    });
+
+    const [fontSize, setFontSize] = useState(() => {
+        try {
+            const stored = localStorage.getItem('fontSize');
+            return stored !== null ? parseInt(stored, 10) || 20 : 20;
+        } catch (e) {
+            return 20;
+        }
+    });
+
+    const [keybinds, setKeybinds] = useState(() => {
+        try {
+            const saved = localStorage.getItem('customKeybinds');
+            if (saved) {
+                return { ...getDefaultKeybinds(), ...JSON.parse(saved) };
+            }
+        } catch (e) {
+            console.error('Failed to load saved keybinds:', e);
+        }
+        return getDefaultKeybinds();
+    });
+
+    useEffect(() => {
+        const root = document.documentElement;
+        root.style.setProperty('--header-background', `rgba(0, 0, 0, ${backgroundTransparency})`);
+        root.style.setProperty('--main-content-background', `rgba(0, 0, 0, ${backgroundTransparency})`);
+        root.style.setProperty('--card-background', `rgba(255, 255, 255, ${backgroundTransparency * 0.05})`);
+        root.style.setProperty('--input-background', `rgba(0, 0, 0, ${backgroundTransparency * 0.375})`);
+        root.style.setProperty('--input-focus-background', `rgba(0, 0, 0, ${backgroundTransparency * 0.625})`);
+        root.style.setProperty('--button-background', `rgba(0, 0, 0, ${backgroundTransparency * 0.625})`);
+        root.style.setProperty('--preview-video-background', `rgba(0, 0, 0, ${backgroundTransparency * 1.125})`);
+        root.style.setProperty('--screen-option-background', `rgba(0, 0, 0, ${backgroundTransparency * 0.5})`);
+        root.style.setProperty('--screen-option-hover-background', `rgba(0, 0, 0, ${backgroundTransparency * 0.75})`);
+        root.style.setProperty('--scrollbar-background', `rgba(0, 0, 0, ${backgroundTransparency * 0.5})`);
+    }, [backgroundTransparency]);
+
+    useEffect(() => {
+        const root = document.documentElement;
+        root.style.setProperty('--response-font-size', `${fontSize}px`);
+    }, [fontSize]);
+
+    function saveKeybinds(updated) {
+        try {
+            localStorage.setItem('customKeybinds', JSON.stringify(updated));
+        } catch (e) {
+            console.error('Failed to save keybinds:', e);
+        }
+        if (window.require) {
+            try {
+                const { ipcRenderer } = window.require('electron');
+                ipcRenderer.send('update-keybinds', updated);
+            } catch (error) {
+                console.error('Failed to notify main process about keybinds:', error);
+            }
+        }
+    }
+
+    function handleKeybindChange(actionKey, value) {
+        const updated = { ...keybinds, [actionKey]: value };
+        setKeybinds(updated);
+        saveKeybinds(updated);
+    }
+
+    function handleResetKeybinds() {
+        const defaults = getDefaultKeybinds();
+        setKeybinds(defaults);
+        try {
+            localStorage.removeItem('customKeybinds');
+        } catch (e) {}
+        if (window.require) {
+            try {
+                const { ipcRenderer } = window.require('electron');
+                ipcRenderer.send('update-keybinds', defaults);
+            } catch (error) {
+                console.error('Failed to reset keybinds in main process:', error);
+            }
+        }
+    }
+
+    function handleKeybindFocus(e) {
+        e.target.placeholder = 'Press key combination...';
+        if (typeof e.target.select === 'function') {
+            e.target.select();
+        }
+    }
+
+    function handleKeybindKeyDown(actionKey, e) {
+        e.preventDefault();
+
+        const modifiers = [];
+
+        if (e.ctrlKey) modifiers.push('Ctrl');
+        if (e.metaKey) modifiers.push('Cmd');
+        if (e.altKey) modifiers.push('Alt');
+        if (e.shiftKey) modifiers.push('Shift');
+
+        let mainKey = e.key;
+
+        switch (e.code) {
+            case 'ArrowUp':
+                mainKey = 'Up';
+                break;
+            case 'ArrowDown':
+                mainKey = 'Down';
+                break;
+            case 'ArrowLeft':
+                mainKey = 'Left';
+                break;
+            case 'ArrowRight':
+                mainKey = 'Right';
+                break;
+            case 'Enter':
+                mainKey = 'Enter';
+                break;
+            case 'Space':
+                mainKey = 'Space';
+                break;
+            case 'Backslash':
+                mainKey = '\\';
+                break;
+            case 'KeyS':
+                if (e.shiftKey) mainKey = 'S';
+                break;
+            case 'KeyM':
+                mainKey = 'M';
+                break;
+            default:
+                if (e.key && e.key.length === 1) {
+                    mainKey = e.key.toUpperCase();
+                }
+                break;
+        }
+
+        if (['Control', 'Meta', 'Alt', 'Shift'].includes(e.key)) {
+            return;
+        }
+
+        const keybind = [...modifiers, mainKey].join('+');
+        handleKeybindChange(actionKey, keybind);
+    }
+
     const containerStyle = {
         padding: 12,
         maxWidth: 700,
@@ -380,6 +630,40 @@ function SettingsView(props) {
         marginTop: 8,
     };
 
+    const descriptionStyle = {
+        fontSize: 11,
+        color: 'var(--description-color)',
+        marginTop: 4,
+    };
+
+    const textAreaStyle = {
+        ...selectStyle,
+        minHeight: 60,
+        resize: 'vertical',
+    };
+
+    const sliderRowStyle = {
+        marginTop: 12,
+    };
+
+    const sliderHeaderStyle = {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 4,
+    };
+
+    const sliderValueStyle = {
+        fontSize: 11,
+        padding: '2px 6px',
+        borderRadius: 3,
+        border: '1px solid rgba(52, 211, 153, 0.4)',
+    };
+
+    const rangeInputStyle = {
+        width: '100%',
+    };
+
     const profiles = [
         { value: 'interview', label: 'Job Interview' },
         { value: 'sales', label: 'Sales Call' },
@@ -392,18 +676,42 @@ function SettingsView(props) {
     const languages = [
         { value: 'en-US', label: 'English (US)' },
         { value: 'en-GB', label: 'English (UK)' },
+        { value: 'en-AU', label: 'English (Australia)' },
         { value: 'en-IN', label: 'English (India)' },
-        { value: 'de-DE', label: 'German' },
-        { value: 'es-ES', label: 'Spanish' },
-        { value: 'fr-FR', label: 'French' },
-        { value: 'hi-IN', label: 'Hindi' },
+        { value: 'de-DE', label: 'German (Germany)' },
+        { value: 'es-US', label: 'Spanish (United States)' },
+        { value: 'es-ES', label: 'Spanish (Spain)' },
+        { value: 'fr-FR', label: 'French (France)' },
+        { value: 'fr-CA', label: 'French (Canada)' },
+        { value: 'hi-IN', label: 'Hindi (India)' },
+        { value: 'pt-BR', label: 'Portuguese (Brazil)' },
+        { value: 'ar-XA', label: 'Arabic (Generic)' },
+        { value: 'id-ID', label: 'Indonesian (Indonesia)' },
+        { value: 'it-IT', label: 'Italian (Italy)' },
+        { value: 'ja-JP', label: 'Japanese (Japan)' },
+        { value: 'tr-TR', label: 'Turkish (Turkey)' },
+        { value: 'vi-VN', label: 'Vietnamese (Vietnam)' },
+        { value: 'bn-IN', label: 'Bengali (India)' },
+        { value: 'gu-IN', label: 'Gujarati (India)' },
+        { value: 'kn-IN', label: 'Kannada (India)' },
+        { value: 'ml-IN', label: 'Malayalam (India)' },
+        { value: 'mr-IN', label: 'Marathi (India)' },
+        { value: 'ta-IN', label: 'Tamil (India)' },
+        { value: 'te-IN', label: 'Telugu (India)' },
+        { value: 'nl-NL', label: 'Dutch (Netherlands)' },
+        { value: 'ko-KR', label: 'Korean (South Korea)' },
+        { value: 'cmn-CN', label: 'Mandarin Chinese (China)' },
+        { value: 'pl-PL', label: 'Polish (Poland)' },
+        { value: 'ru-RU', label: 'Russian (Russia)' },
+        { value: 'th-TH', label: 'Thai (Thailand)' },
     ];
 
     const intervals = [
-        { value: 'manual', label: 'Manual only' },
+        { value: 'manual', label: 'Manual (on demand)' },
+        { value: '1', label: 'Every 1s' },
+        { value: '2', label: 'Every 2s' },
         { value: '5', label: 'Every 5s' },
         { value: '10', label: 'Every 10s' },
-        { value: '20', label: 'Every 20s' },
     ];
 
     const qualities = [
@@ -448,6 +756,53 @@ function SettingsView(props) {
         saveLocalStorage('advancedMode', value.toString());
     }
 
+    function handleCustomPromptChange(e) {
+        const value = e.target.value;
+        setCustomPrompt(value);
+        saveLocalStorage('customPrompt', value);
+    }
+
+    function handleAudioModeChange(e) {
+        const value = e.target.value;
+        setAudioMode(value);
+        saveLocalStorage('audioMode', value);
+    }
+
+    function handleStealthProfileChange(e) {
+        const value = e.target.value;
+        setStealthProfile(value);
+        saveLocalStorage('stealthProfile', value);
+        try {
+            alert('Restart the application for stealth changes to take full effect.');
+        } catch (e2) {}
+    }
+
+    async function handleGoogleSearchChange(e) {
+        const checked = e.target.checked;
+        setGoogleSearchEnabled(checked);
+        saveLocalStorage('googleSearchEnabled', checked.toString());
+        if (window.require) {
+            try {
+                const { ipcRenderer } = window.require('electron');
+                await ipcRenderer.invoke('update-google-search-setting', checked);
+            } catch (error) {
+                console.error('Failed to update Google Search setting:', error);
+            }
+        }
+    }
+
+    function handleBackgroundTransparencyChange(e) {
+        const value = parseFloat(e.target.value);
+        setBackgroundTransparency(value);
+        saveLocalStorage('backgroundTransparency', value.toString());
+    }
+
+    function handleFontSizeChange(e) {
+        const value = parseInt(e.target.value, 10) || 20;
+        setFontSize(value);
+        saveLocalStorage('fontSize', value.toString());
+    }
+
     return React.createElement(
         'div',
         { style: containerStyle },
@@ -478,6 +833,62 @@ function SettingsView(props) {
                         React.createElement('option', { key: l.value, value: l.value }, l.label),
                     ),
                 ),
+            ),
+            React.createElement(
+                'label',
+                null,
+                React.createElement('span', { style: labelStyle }, 'Custom AI instructions'),
+                React.createElement('textarea', {
+                    style: textAreaStyle,
+                    rows: 4,
+                    value: customPrompt,
+                    onChange: handleCustomPromptChange,
+                    placeholder: 'Add specific instructions for how you want the AI to behave...',
+                }),
+                React.createElement(
+                    'p',
+                    { style: descriptionStyle },
+                    'These instructions are added on top of the selected profile prompts.',
+                ),
+            ),
+        ),
+        React.createElement(
+            'div',
+            { style: cardStyle },
+            React.createElement('div', { style: { ...labelStyle, textTransform: 'uppercase', marginBottom: 12 } }, 'Audio & Stealth'),
+            React.createElement(
+                'label',
+                null,
+                React.createElement('span', { style: labelStyle }, 'Audio mode'),
+                React.createElement(
+                    'select',
+                    { style: selectStyle, value: audioMode, onChange: handleAudioModeChange },
+                    React.createElement('option', { value: 'speaker_only' }, 'Speaker Only (Interviewer)'),
+                    React.createElement('option', { value: 'mic_only' }, 'Microphone Only (Me)'),
+                    React.createElement('option', { value: 'both' }, 'Both Speaker & Microphone'),
+                ),
+            ),
+            React.createElement(
+                'p',
+                { style: descriptionStyle },
+                'Choose which audio sources to capture for the AI.',
+            ),
+            React.createElement(
+                'label',
+                null,
+                React.createElement('span', { style: labelStyle }, 'Stealth profile'),
+                React.createElement(
+                    'select',
+                    { style: selectStyle, value: stealthProfile, onChange: handleStealthProfileChange },
+                    React.createElement('option', { value: 'visible' }, 'Visible'),
+                    React.createElement('option', { value: 'balanced' }, 'Balanced'),
+                    React.createElement('option', { value: 'ultra' }, 'Ultra-stealth'),
+                ),
+            ),
+            React.createElement(
+                'p',
+                { style: descriptionStyle },
+                'A restart is recommended for some stealth changes to fully apply.',
             ),
         ),
         React.createElement(
@@ -534,22 +945,227 @@ function SettingsView(props) {
                 }),
                 React.createElement('span', { style: { fontSize: 12 } }, 'Enable advanced tools'),
             ),
+            React.createElement(
+                'div',
+                { style: sliderRowStyle },
+                React.createElement(
+                    'div',
+                    { style: sliderHeaderStyle },
+                    React.createElement('span', { style: labelStyle }, 'Background transparency'),
+                    React.createElement(
+                        'span',
+                        { style: sliderValueStyle },
+                        `${Math.round(backgroundTransparency * 100)}%`,
+                    ),
+                ),
+                React.createElement('input', {
+                    type: 'range',
+                    min: 0,
+                    max: 1,
+                    step: 0.01,
+                    value: backgroundTransparency,
+                    onChange: handleBackgroundTransparencyChange,
+                    style: rangeInputStyle,
+                }),
+            ),
+            React.createElement(
+                'div',
+                { style: sliderRowStyle },
+                React.createElement(
+                    'div',
+                    { style: sliderHeaderStyle },
+                    React.createElement('span', { style: labelStyle }, 'Response font size'),
+                    React.createElement(
+                        'span',
+                        { style: sliderValueStyle },
+                        `${fontSize}px`,
+                    ),
+                ),
+                React.createElement('input', {
+                    type: 'range',
+                    min: 12,
+                    max: 32,
+                    step: 1,
+                    value: fontSize,
+                    onChange: handleFontSizeChange,
+                    style: rangeInputStyle,
+                }),
+            ),
+        ),
+        React.createElement(
+            'div',
+            { style: cardStyle },
+            React.createElement('div', { style: { ...labelStyle, textTransform: 'uppercase', marginBottom: 12 } }, 'Keyboard Shortcuts'),
+            React.createElement(
+                'table',
+                {
+                    style: {
+                        width: '100%',
+                        borderCollapse: 'collapse',
+                        marginTop: 8,
+                        fontSize: 11,
+                    },
+                },
+                React.createElement(
+                    'thead',
+                    null,
+                    React.createElement(
+                        'tr',
+                        null,
+                        React.createElement(
+                            'th',
+                            {
+                                style: {
+                                    textAlign: 'left',
+                                    padding: '6px 8px',
+                                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                                },
+                            },
+                            'Action',
+                        ),
+                        React.createElement(
+                            'th',
+                            {
+                                style: {
+                                    textAlign: 'left',
+                                    padding: '6px 8px',
+                                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                                },
+                            },
+                            'Shortcut',
+                        ),
+                    ),
+                ),
+                React.createElement(
+                    'tbody',
+                    null,
+                    KEYBIND_ACTIONS.map(action =>
+                        React.createElement(
+                            'tr',
+                            { key: action.key },
+                            React.createElement(
+                                'td',
+                                {
+                                    style: {
+                                        padding: '6px 8px',
+                                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                    },
+                                },
+                                React.createElement(
+                                    'div',
+                                    { style: { fontWeight: 500, fontSize: 12 } },
+                                    action.name,
+                                ),
+                                React.createElement(
+                                    'div',
+                                    { style: { fontSize: 10, color: 'var(--description-color)' } },
+                                    action.description,
+                                ),
+                            ),
+                            React.createElement(
+                                'td',
+                                {
+                                    style: {
+                                        padding: '6px 8px',
+                                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                    },
+                                },
+                                React.createElement('input', {
+                                    type: 'text',
+                                    value: keybinds[action.key] || '',
+                                    placeholder: 'Press keys...',
+                                    onKeyDown: e => handleKeybindKeyDown(action.key, e),
+                                    onFocus: handleKeybindFocus,
+                                    readOnly: true,
+                                    style: {
+                                        ...selectStyle,
+                                        textAlign: 'center',
+                                        fontFamily:
+                                            "SF Mono, Monaco, 'Inconsolata', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace",
+                                        fontSize: 11,
+                                        padding: '4px 8px',
+                                        cursor: 'pointer',
+                                    },
+                                }),
+                            ),
+                        ),
+                    ),
+                    React.createElement(
+                        'tr',
+                        null,
+                        React.createElement(
+                            'td',
+                            {
+                                colSpan: 2,
+                                style: {
+                                    padding: '8px',
+                                    paddingTop: 10,
+                                },
+                            },
+                            React.createElement(
+                                'button',
+                                {
+                                    onClick: handleResetKeybinds,
+                                    style: {
+                                        background: 'var(--button-background)',
+                                        color: 'var(--text-color)',
+                                        border: '1px solid var(--button-border)',
+                                        padding: '6px 10px',
+                                        borderRadius: 4,
+                                        fontSize: 11,
+                                        fontWeight: 500,
+                                        cursor: 'pointer',
+                                    },
+                                },
+                                'Reset to Defaults',
+                            ),
+                            React.createElement(
+                                'div',
+                                { style: { ...descriptionStyle, marginTop: 8 } },
+                                'Restore all keyboard shortcuts to their default values',
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        React.createElement(
+            'div',
+            { style: cardStyle },
+            React.createElement('div', { style: { ...labelStyle, textTransform: 'uppercase', marginBottom: 12 } }, 'Google Search'),
+            React.createElement(
+                'div',
+                { style: checkboxRowStyle },
+                React.createElement('input', {
+                    type: 'checkbox',
+                    checked: googleSearchEnabled,
+                    onChange: handleGoogleSearchChange,
+                }),
+                React.createElement(
+                    'span',
+                    { style: { fontSize: 12 } },
+                    'Allow the AI to search Google for up-to-date information',
+                ),
+            ),
+            React.createElement(
+                'p',
+                { style: descriptionStyle },
+                'Takes effect when you start a new session.',
+            ),
         ),
     );
 }
 
 function AssistantView(props) {
-    const { responses, onSendText } = props;
+    const { chatMessages, onSendText, transcription } = props;
     const [inputValue, setInputValue] = useState('');
     const containerRef = useRef(null);
-
-    const latestResponse = responses.length > 0 ? responses[responses.length - 1] : '';
 
     useEffect(() => {
         if (containerRef.current) {
             containerRef.current.scrollTop = containerRef.current.scrollHeight;
         }
-    }, [latestResponse]);
+    }, [chatMessages, transcription]);
 
     function handleKeyDown(e) {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -576,6 +1192,9 @@ function AssistantView(props) {
         background: 'var(--main-content-background)',
         padding: 16,
         userSelect: 'text',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
     };
 
     const inputRowStyle = {
@@ -611,24 +1230,84 @@ function AssistantView(props) {
         justifyContent: 'center',
     };
 
-    let renderedHtml = latestResponse || '';
-    if (typeof window !== 'undefined' && window.marked && latestResponse) {
-        try {
-            window.marked.setOptions({ breaks: true, gfm: true, sanitize: false });
-            renderedHtml = window.marked.parse(latestResponse);
-        } catch (e) {
-            renderedHtml = latestResponse;
+    const messageRowStyle = isUser => ({
+        display: 'flex',
+        justifyContent: isUser ? 'flex-end' : 'flex-start',
+        marginBottom: 8,
+    });
+
+    const bubbleBaseStyle = {
+        maxWidth: '80%',
+        padding: '8px 12px',
+        borderRadius: 10,
+        fontSize: 14,
+        lineHeight: 1.5,
+        wordBreak: 'break-word',
+        whiteSpace: 'pre-wrap',
+    };
+
+    const userBubbleStyle = {
+        ...bubbleBaseStyle,
+        background: 'var(--text-input-button-background)',
+        color: '#ffffff',
+        borderTopRightRadius: 2,
+    };
+
+    const assistantBubbleStyle = {
+        ...bubbleBaseStyle,
+        background: 'rgba(0,0,0,0.5)',
+        border: '1px solid var(--border-color)',
+        borderTopLeftRadius: 2,
+    };
+
+    const allMessages = Array.isArray(chatMessages) ? chatMessages.slice() : [];
+
+    if (transcription && transcription.trim().length > 0) {
+        allMessages.push({ id: 'live-transcription', role: 'user', text: transcription.trim() });
+    }
+
+    function renderMessageContent(message) {
+        if (message.role === 'assistant') {
+            let html = message.text || '';
+            if (typeof window !== 'undefined' && window.marked && html) {
+                try {
+                    window.marked.setOptions({ breaks: true, gfm: true, sanitize: false });
+                    html = window.marked.parse(html);
+                } catch (e) {}
+            }
+            return React.createElement('div', { dangerouslySetInnerHTML: { __html: html } });
         }
+        return React.createElement('div', null, message.text || '');
     }
 
     return React.createElement(
         'div',
         { style: containerStyle },
-        React.createElement('div', {
-            style: responseStyle,
-            ref: containerRef,
-            dangerouslySetInnerHTML: { __html: renderedHtml },
-        }),
+        React.createElement(
+            'div',
+            {
+                style: responseStyle,
+                ref: containerRef,
+            },
+            allMessages.length === 0
+                ? React.createElement(
+                      'div',
+                      { style: { fontSize: 13, opacity: 0.7 } },
+                      'Start speaking or type a message to begin the conversation.',
+                  )
+                : allMessages.map(message => {
+                      const isUser = message.role === 'user';
+                      return React.createElement(
+                          'div',
+                          { key: message.id, style: messageRowStyle(isUser) },
+                          React.createElement(
+                              'div',
+                              { style: isUser ? userBubbleStyle : assistantBubbleStyle },
+                              renderMessageContent(message),
+                          ),
+                      );
+                  }),
+        ),
         React.createElement(
             'div',
             { style: inputRowStyle },
@@ -651,7 +1330,7 @@ function AssistantView(props) {
                         }
                     },
                 },
-                '➤',
+                'Send',
             ),
         ),
     );
@@ -669,6 +1348,9 @@ function App() {
     const [advancedMode, setAdvancedMode] = useState(getInitialAdvancedMode);
     const [isClickThrough, setIsClickThrough] = useState(false);
     const [responses, setResponses] = useState([]);
+    const [transcription, setTranscription] = useState('');
+    const [userMessages, setUserMessages] = useState([]);
+    const [chatMessages, setChatMessages] = useState([]);
     const [isInitializing, setIsInitializing] = useState(false);
     const [showApiKeyError, setShowApiKeyError] = useState(false);
 
@@ -696,8 +1378,24 @@ function App() {
         requestResize();
     }, [layoutMode]);
 
+    const handleStart = useCallback(async () => {
+        const apiKey = readApiKey().trim();
+        if (!apiKey) {
+            setShowApiKeyError(true);
+            setTimeout(() => setShowApiKeyError(false), 1000);
+            return;
+        }
+        if (!window.cheddar) return;
+        await window.cheddar.initializeGemini(selectedProfile, selectedLanguage);
+        window.cheddar.startCapture(selectedScreenshotInterval, selectedImageQuality);
+        setResponses([]);
+        setStartTime(Date.now());
+        setCurrentView('assistant');
+    }, [selectedProfile, selectedLanguage, selectedScreenshotInterval, selectedImageQuality]);
+
     useEffect(() => {
         if (!window.cheddar || typeof window.cheddar.attachUI !== 'function') return;
+
         function setResponseFromCheddar(response) {
             setResponses(prev => {
                 if (prev.length === 0) {
@@ -708,16 +1406,43 @@ function App() {
                 return copy;
             });
         }
+
         function setStatusFromCheddar(text) {
             setStatusText(text);
         }
+
+        function setTranscriptionFromCheddar(text) {
+            setTranscription(text || '');
+        }
+
+        function addConversationTurnFromCheddar(turn) {
+            if (!turn) return;
+            const userText = (turn.transcription || '').trim();
+            const aiText = (turn.ai_response || '').trim();
+            const timestamp = turn.timestamp || Date.now();
+
+            setChatMessages(prev => {
+                const next = prev.slice();
+                if (userText) {
+                    next.push({ id: `${timestamp}-user`, role: 'user', text: userText });
+                }
+                if (aiText) {
+                    next.push({ id: `${timestamp}-assistant`, role: 'assistant', text: aiText });
+                }
+                return next;
+            });
+        }
+
         const ui = {
             getCurrentView: () => viewRef.current,
             getLayoutMode: () => layoutRef.current,
             setStatus: setStatusFromCheddar,
             setResponse: setResponseFromCheddar,
+            setTranscription: setTranscriptionFromCheddar,
+            addConversationTurn: addConversationTurnFromCheddar,
             handleStart: () => handleStart(),
         };
+
         window.cheddar.attachUI(ui);
     });
 
@@ -735,21 +1460,6 @@ function App() {
             };
         } catch (e) {}
     }, []);
-
-    const handleStart = useCallback(async () => {
-        const apiKey = readApiKey().trim();
-        if (!apiKey) {
-            setShowApiKeyError(true);
-            setTimeout(() => setShowApiKeyError(false), 1000);
-            return;
-        }
-        if (!window.cheddar) return;
-        await window.cheddar.initializeGemini(selectedProfile, selectedLanguage);
-        window.cheddar.startCapture(selectedScreenshotInterval, selectedImageQuality);
-        setResponses([]);
-        setStartTime(Date.now());
-        setCurrentView('assistant');
-    }, [selectedProfile, selectedLanguage, selectedScreenshotInterval, selectedImageQuality]);
 
     async function handleClose() {
         if (!window.require) return;
@@ -781,6 +1491,14 @@ function App() {
         await ipcRenderer.invoke('open-external', 'https://cheatingdaddy.com/help/api-key');
     }
 
+    async function handleExternalLink(url) {
+        if (!window.require) return;
+        const { ipcRenderer } = window.require('electron');
+        try {
+            await ipcRenderer.invoke('open-external', url);
+        } catch (e) {}
+    }
+
     async function handleSendText(message) {
         if (!window.cheddar) return;
         const result = await window.cheddar.sendTextMessage(message);
@@ -788,6 +1506,11 @@ function App() {
             setStatusText('Error sending message: ' + result.error);
         } else {
             setStatusText('Message sent...');
+            setUserMessages(prev => [...prev, message]);
+            setChatMessages(prev => [
+                ...prev,
+                { id: `${Date.now()}-user-text`, role: 'user', text: message },
+            ]);
         }
     }
 
@@ -842,10 +1565,24 @@ function App() {
             advancedMode,
             setAdvancedMode,
         });
+    } else if (currentView === 'help') {
+        viewElement = React.createElement('help-view', {
+            onExternalLinkClick: handleExternalLink,
+            style: { width: '100%', height: '100%' },
+        });
+    } else if (currentView === 'history') {
+        viewElement = React.createElement('history-view', {
+            style: { width: '100%', height: '100%' },
+        });
+    } else if (currentView === 'advanced') {
+        viewElement = React.createElement('advanced-view', {
+            style: { width: '100%', height: '100%' },
+        });
     } else {
         viewElement = React.createElement(AssistantView, {
-            responses,
+            chatMessages,
             onSendText: handleSendText,
+            transcription,
         });
     }
 
@@ -862,6 +1599,9 @@ function App() {
                 advancedMode,
                 isClickThrough,
                 onSettings: () => setCurrentView('settings'),
+                onHelp: () => setCurrentView('help'),
+                onHistory: () => setCurrentView('history'),
+                onAdvanced: () => setCurrentView('advanced'),
                 onClose: handleClose,
                 onBack: () => setCurrentView('main'),
                 onHide: handleHide,

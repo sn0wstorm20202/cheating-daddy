@@ -184,6 +184,14 @@ ipcRenderer.on('update-response', (event, response) => {
     }
 });
 
+// Listen for live transcription text (mic + system audio) and forward to UI
+ipcRenderer.on('update-transcription', (event, transcription) => {
+    console.log('Transcription update:', transcription);
+    if (window.cheddar && typeof window.cheddar.setTranscription === 'function') {
+        window.cheddar.setTranscription(transcription);
+    }
+});
+
 async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'medium') {
     // Store the image quality for manual screenshots
     currentImageQuality = imageQuality;
@@ -224,9 +232,9 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                         audio: {
                             sampleRate: SAMPLE_RATE,
                             channelCount: 1,
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true,
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false,
                         },
                         video: false,
                     });
@@ -281,9 +289,9 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                         audio: {
                             sampleRate: SAMPLE_RATE,
                             channelCount: 1,
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true,
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false,
                         },
                         video: false,
                     });
@@ -310,9 +318,9 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                 audio: {
                     sampleRate: SAMPLE_RATE,
                     channelCount: 1,
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
                 },
             });
 
@@ -328,9 +336,9 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                         audio: {
                             sampleRate: SAMPLE_RATE,
                             channelCount: 1,
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true,
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false,
                         },
                         video: false,
                     });
@@ -348,6 +356,17 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
             videoTrack: mediaStream.getVideoTracks()[0]?.getSettings(),
         });
 
+        // Update status so the UI clearly shows that capture has started
+        try {
+            const modeDescription =
+                audioMode === 'mic_only'
+                    ? 'microphone only'
+                    : audioMode === 'speaker_only'
+                      ? 'system audio only'
+                      : 'system audio + microphone';
+            cheddar.setStatus(`Capturing screen and ${modeDescription}...`);
+        } catch (statusError) {}
+
         // Start capturing screenshots - check if manual mode
         if (screenshotIntervalSeconds === 'manual' || screenshotIntervalSeconds === 'Manual') {
             console.log('Manual mode enabled - screenshots will be captured on demand only');
@@ -361,7 +380,10 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
         }
     } catch (err) {
         console.error('Error starting capture:', err);
-        cheddar.setStatus('error');
+        try {
+            const message = err && err.message ? err.message : 'unknown error';
+            cheddar.setStatus(`Error starting capture: ${message}`);
+        } catch (statusError) {}
     }
 }
 
@@ -726,6 +748,9 @@ ipcRenderer.on('save-conversation-turn', async (event, data) => {
     try {
         await saveConversationSession(data.sessionId, data.fullHistory);
         console.log('Conversation session saved:', data.sessionId);
+        if (window.cheddar && typeof window.cheddar.addConversationTurn === 'function') {
+            window.cheddar.addConversationTurn(data.turn);
+        }
     } catch (error) {
         console.error('Error saving conversation session:', error);
     }
@@ -780,6 +805,16 @@ const cheddar = {
     setResponse: response => {
         if (cheddarUI && typeof cheddarUI.setResponse === 'function') {
             cheddarUI.setResponse(response);
+        }
+    },
+    setTranscription: transcription => {
+        if (cheddarUI && typeof cheddarUI.setTranscription === 'function') {
+            cheddarUI.setTranscription(transcription);
+        }
+    },
+    addConversationTurn: turn => {
+        if (cheddarUI && typeof cheddarUI.addConversationTurn === 'function') {
+            cheddarUI.addConversationTurn(turn);
         }
     },
 

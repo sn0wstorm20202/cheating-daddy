@@ -26,6 +26,7 @@ module.exports.formatSpeakerResults = formatSpeakerResults;
 // Audio capture variables
 let systemAudioProc = null;
 let messageBuffer = '';
+let lastInputType = null; // 'audio' or 'text'
 
 // Reconnection tracking variables
 let reconnectionAttempts = 0;
@@ -251,7 +252,9 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                     console.log('----------------', message);
 
                     if (message.serverContent?.inputTranscription?.results) {
-                        currentTranscription += formatSpeakerResults(message.serverContent.inputTranscription.results);
+                        const newText = formatSpeakerResults(message.serverContent.inputTranscription.results);
+                        currentTranscription += newText;
+                        sendToRenderer('update-transcription', currentTranscription);
                     }
 
                     // Handle AI model response
@@ -268,13 +271,21 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                     if (message.serverContent?.generationComplete) {
                         sendToRenderer('update-response', messageBuffer);
 
-                        // Save conversation turn when we have both transcription and AI response
-                        if (currentTranscription && messageBuffer) {
-                            saveConversationTurn(currentTranscription, messageBuffer);
-                            currentTranscription = ''; // Reset for next turn
+                        // For audio-based inputs, always create a conversation turn so the React chat UI updates,
+                        // even if the transcription text is empty. For text-based inputs, the React UI already
+                        // tracks the user message locally, so we currently skip creating a turn here.
+                        if (messageBuffer && lastInputType === 'audio') {
+                            const hasTranscription = currentTranscription && currentTranscription.trim().length > 0;
+                            const turnTranscription = hasTranscription
+                                ? currentTranscription.trim()
+                                : '[Voice input]';
+
+                            saveConversationTurn(turnTranscription, messageBuffer);
                         }
 
+                        currentTranscription = '';
                         messageBuffer = '';
+                        lastInputType = null;
                     }
 
                     if (message.serverContent?.turnComplete) {
@@ -507,6 +518,7 @@ async function sendAudioToGemini(base64Data, geminiSessionRef) {
     if (!geminiSessionRef.current) return;
 
     try {
+        lastInputType = 'audio';
         process.stdout.write('.');
         await geminiSessionRef.current.sendRealtimeInput({
             audio: {
@@ -535,6 +547,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     ipcMain.handle('send-audio-content', async (event, { data, mimeType }) => {
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
         try {
+            lastInputType = 'audio';
             process.stdout.write('.');
             await geminiSessionRef.current.sendRealtimeInput({
                 audio: { data: data, mimeType: mimeType },
@@ -550,6 +563,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     ipcMain.handle('send-mic-audio-content', async (event, { data, mimeType }) => {
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
         try {
+            lastInputType = 'audio';
             process.stdout.write(',');
             await geminiSessionRef.current.sendRealtimeInput({
                 audio: { data: data, mimeType: mimeType },
@@ -598,6 +612,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             }
 
             console.log('Sending text message:', text);
+            lastInputType = 'text';
             await geminiSessionRef.current.sendRealtimeInput({ text: text.trim() });
             return { success: true };
         } catch (error) {
