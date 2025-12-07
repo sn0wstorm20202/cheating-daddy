@@ -466,13 +466,20 @@ async function startMicrophone() {
     }
 
     try {
+        const audioMode = localStorage.getItem('audioMode') || 'speaker_only';
+        const isBothMode = audioMode === 'both';
+
         const stream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 sampleRate: MIC_SAMPLE_RATE,
                 channelCount: 1,
-                echoCancellation: false,
-                noiseSuppression: false,
-                autoGainControl: false,
+                // In 'both' mode we let the browser perform echo cancellation
+                // and noise suppression so the interviewer audio from system
+                // speakers doesn't leak heavily into the mic stream. For
+                // 'mic_only' we keep the raw microphone signal.
+                echoCancellation: isBothMode,
+                noiseSuppression: isBothMode,
+                autoGainControl: isBothMode,
             },
             video: false,
         });

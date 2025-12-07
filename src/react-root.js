@@ -1179,13 +1179,18 @@ function AssistantView(props) {
 
     const containerStyle = {
         height: '100%',
+        width: '100%',
         display: 'flex',
         flexDirection: 'column',
+        flex: 1,
     };
 
     const responseStyle = {
         flex: 1,
+        width: '100%',
+        maxWidth: '100%',
         overflowY: 'auto',
+        overflowX: 'hidden',
         borderRadius: 10,
         fontSize: 'var(--response-font-size, 18px)',
         lineHeight: 1.6,
