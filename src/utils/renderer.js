@@ -25,6 +25,7 @@ let audioBuffer = [];
 const SAMPLE_RATE = 24000;
 const AUDIO_CHUNK_DURATION = 0.1; // seconds
 const BUFFER_SIZE = 4096; // Increased buffer size for smoother audio
+const MIC_SAMPLE_RATE = SAMPLE_RATE;
 
 let hiddenVideo = null;
 let offscreenCanvas = null;
@@ -33,6 +34,14 @@ let currentImageQuality = 'medium'; // Store current image quality for manual sc
 
 const isLinux = process.platform === 'linux';
 const isMacOS = process.platform === 'darwin';
+const isWindows = process.platform === 'win32';
+
+// Dedicated microphone capture state (16 kHz pipeline for Windows)
+let micCaptureContext = null;
+let micCaptureSource = null;
+let micCaptureProcessor = null;
+let micCaptureStream = null;
+let micCaptureBuffer = [];
 
 // Token tracking system for rate limiting
 let tokenTracker = {
@@ -308,44 +317,55 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
 
             console.log('Linux capture started - system audio:', mediaStream.getAudioTracks().length > 0, 'microphone mode:', audioMode);
         } else {
-            // Windows - use display media with loopback for system audio
-            mediaStream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                    frameRate: 1,
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                },
-                audio: {
-                    sampleRate: SAMPLE_RATE,
-                    channelCount: 1,
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false,
-                },
-            });
+            // Windows
+            if (audioMode === 'mic_only') {
+                // Microphone-only mode: capture screen for screenshots, but do NOT
+                // enable loopback audio. All audio comes from the dedicated mic
+                // pipeline so the model only hears the candidate.
+                mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        frameRate: 1,
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                    },
+                    audio: false,
+                });
 
-            console.log('Windows capture started with loopback audio');
+                console.log('Windows capture started in microphone-only mode (no loopback audio)');
 
-            // Setup audio processing for Windows loopback audio only
-            setupWindowsLoopbackProcessing();
-
-            if (audioMode === 'mic_only' || audioMode === 'both') {
-                let micStream = null;
                 try {
-                    micStream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            sampleRate: SAMPLE_RATE,
-                            channelCount: 1,
-                            echoCancellation: false,
-                            noiseSuppression: false,
-                            autoGainControl: false,
-                        },
-                        video: false,
-                    });
-                    console.log('Windows microphone capture started');
-                    setupLinuxMicProcessing(micStream);
+                    await startMicrophone();
                 } catch (micError) {
-                    console.warn('Failed to get microphone access on Windows:', micError);
+                    console.warn('Failed to start microphone capture on Windows:', micError);
+                }
+            } else {
+                // Interviewer/system or both: keep existing loopback behaviour
+                mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        frameRate: 1,
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                    },
+                    audio: {
+                        sampleRate: SAMPLE_RATE,
+                        channelCount: 1,
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false,
+                    },
+                });
+
+                console.log('Windows capture started with loopback audio');
+
+                // Setup audio processing for Windows loopback audio only
+                setupWindowsLoopbackProcessing();
+
+                if (audioMode === 'both') {
+                    try {
+                        await startMicrophone();
+                    } catch (micError) {
+                        console.warn('Failed to start microphone capture on Windows (both mode):', micError);
+                    }
                 }
             }
         }
@@ -393,24 +413,15 @@ function setupLinuxMicProcessing(micStream) {
     const micSource = micAudioContext.createMediaStreamSource(micStream);
     const micProcessor = micAudioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
 
-    let audioBuffer = [];
-    const samplesPerChunk = SAMPLE_RATE * AUDIO_CHUNK_DURATION;
-
     micProcessor.onaudioprocess = async e => {
         const inputData = e.inputBuffer.getChannelData(0);
-        audioBuffer.push(...inputData);
+        const pcmData16 = convertFloat32ToInt16(inputData);
+        const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-        // Process audio in chunks
-        while (audioBuffer.length >= samplesPerChunk) {
-            const chunk = audioBuffer.splice(0, samplesPerChunk);
-            const pcmData16 = convertFloat32ToInt16(chunk);
-            const base64Data = arrayBufferToBase64(pcmData16.buffer);
-
-            await ipcRenderer.invoke('send-mic-audio-content', {
-                data: base64Data,
-                mimeType: 'audio/pcm;rate=24000',
-            });
-        }
+        await ipcRenderer.invoke('send-mic-audio-content', {
+            data: base64Data,
+            mimeType: 'audio/pcm;rate=24000',
+        });
     };
 
     micSource.connect(micProcessor);
@@ -426,28 +437,103 @@ function setupLinuxSystemAudioProcessing() {
     const source = audioContext.createMediaStreamSource(mediaStream);
     audioProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
 
-    let audioBuffer = [];
-    const samplesPerChunk = SAMPLE_RATE * AUDIO_CHUNK_DURATION;
-
     audioProcessor.onaudioprocess = async e => {
         const inputData = e.inputBuffer.getChannelData(0);
-        audioBuffer.push(...inputData);
+        const pcmData16 = convertFloat32ToInt16(inputData);
+        const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-        // Process audio in chunks
-        while (audioBuffer.length >= samplesPerChunk) {
-            const chunk = audioBuffer.splice(0, samplesPerChunk);
-            const pcmData16 = convertFloat32ToInt16(chunk);
-            const base64Data = arrayBufferToBase64(pcmData16.buffer);
-
-            await ipcRenderer.invoke('send-audio-content', {
-                data: base64Data,
-                mimeType: 'audio/pcm;rate=24000',
-            });
-        }
+        await ipcRenderer.invoke('send-audio-content', {
+            data: base64Data,
+            mimeType: 'audio/pcm;rate=24000',
+        });
     };
 
     source.connect(audioProcessor);
     audioProcessor.connect(audioContext.destination);
+}
+
+async function startMicrophone() {
+    // Currently used primarily on Windows to provide a dedicated 16 kHz
+    // microphone stream for Gemini. Other platforms keep using their
+    // existing microphone capture paths.
+    if (!isWindows) {
+        return;
+    }
+
+    if (micCaptureContext) {
+        console.log('Microphone capture already running');
+        return;
+    }
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                sampleRate: MIC_SAMPLE_RATE,
+                channelCount: 1,
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+            },
+            video: false,
+        });
+
+        const context = new AudioContext({ sampleRate: MIC_SAMPLE_RATE });
+        const source = context.createMediaStreamSource(stream);
+        const processor = context.createScriptProcessor(BUFFER_SIZE, 1, 1);
+
+        processor.onaudioprocess = async e => {
+            const inputData = e.inputBuffer.getChannelData(0);
+            const pcmData16 = convertFloat32ToInt16(inputData);
+            const base64Data = arrayBufferToBase64(pcmData16.buffer);
+
+            try {
+                await ipcRenderer.invoke('send-mic-audio-content', {
+                    data: base64Data,
+                    mimeType: 'audio/pcm;rate=24000',
+                });
+            } catch (err) {
+                console.error('Error sending microphone audio chunk:', err);
+            }
+        };
+
+        source.connect(processor);
+        processor.connect(context.destination);
+
+        micCaptureContext = context;
+        micCaptureSource = source;
+        micCaptureProcessor = processor;
+        micCaptureStream = stream;
+
+        console.log('Microphone capture started at 16 kHz');
+    } catch (error) {
+        console.error('Failed to start microphone capture:', error);
+    }
+}
+
+function stopMicrophone() {
+    try {
+        if (micCaptureProcessor) {
+            micCaptureProcessor.disconnect();
+            micCaptureProcessor.onaudioprocess = null;
+            micCaptureProcessor = null;
+        }
+        if (micCaptureSource) {
+            micCaptureSource.disconnect();
+            micCaptureSource = null;
+        }
+        if (micCaptureContext) {
+            micCaptureContext.close();
+            micCaptureContext = null;
+        }
+        if (micCaptureStream) {
+            micCaptureStream.getTracks().forEach(track => track.stop());
+            micCaptureStream = null;
+        }
+    } catch (error) {
+        console.error('Error stopping microphone capture:', error);
+    }
+
+    micCaptureBuffer = [];
 }
 
 function setupWindowsLoopbackProcessing() {
@@ -456,24 +542,15 @@ function setupWindowsLoopbackProcessing() {
     const source = audioContext.createMediaStreamSource(mediaStream);
     audioProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
 
-    let audioBuffer = [];
-    const samplesPerChunk = SAMPLE_RATE * AUDIO_CHUNK_DURATION;
-
     audioProcessor.onaudioprocess = async e => {
         const inputData = e.inputBuffer.getChannelData(0);
-        audioBuffer.push(...inputData);
+        const pcmData16 = convertFloat32ToInt16(inputData);
+        const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-        // Process audio in chunks
-        while (audioBuffer.length >= samplesPerChunk) {
-            const chunk = audioBuffer.splice(0, samplesPerChunk);
-            const pcmData16 = convertFloat32ToInt16(chunk);
-            const base64Data = arrayBufferToBase64(pcmData16.buffer);
-
-            await ipcRenderer.invoke('send-audio-content', {
-                data: base64Data,
-                mimeType: 'audio/pcm;rate=24000',
-            });
-        }
+        await ipcRenderer.invoke('send-audio-content', {
+            data: base64Data,
+            mimeType: 'audio/pcm;rate=24000',
+        });
     };
 
     source.connect(audioProcessor);
@@ -601,6 +678,9 @@ function stopCapture() {
         clearInterval(screenshotInterval);
         screenshotInterval = null;
     }
+
+    // Stop dedicated microphone capture if running
+    stopMicrophone();
 
     if (audioProcessor) {
         audioProcessor.disconnect();
@@ -824,6 +904,8 @@ const cheddar = {
     stopCapture,
     sendTextMessage,
     handleShortcut,
+    startMicrophone,
+    stopMicrophone,
 
     // Conversation history functions
     getAllConversationSessions,

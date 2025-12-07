@@ -259,6 +259,9 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
 
                     // Handle AI model response
                     if (message.serverContent?.modelTurn?.parts) {
+                        // Let the UI know the model has started answering
+                        sendToRenderer('update-status', 'Answering...');
+
                         for (const part of message.serverContent.modelTurn.parts) {
                             console.log(part);
                             if (part.text) {
@@ -519,6 +522,7 @@ async function sendAudioToGemini(base64Data, geminiSessionRef) {
 
     try {
         lastInputType = 'audio';
+        sendToRenderer('update-status', 'Listening...');
         process.stdout.write('.');
         await geminiSessionRef.current.sendRealtimeInput({
             audio: {
@@ -548,6 +552,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
         try {
             lastInputType = 'audio';
+            sendToRenderer('update-status', 'Listening...');
             process.stdout.write('.');
             await geminiSessionRef.current.sendRealtimeInput({
                 audio: { data: data, mimeType: mimeType },
@@ -564,6 +569,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
         try {
             lastInputType = 'audio';
+            sendToRenderer('update-status', 'Listening...');
             process.stdout.write(',');
             await geminiSessionRef.current.sendRealtimeInput({
                 audio: { data: data, mimeType: mimeType },

@@ -1157,7 +1157,7 @@ function SettingsView(props) {
 }
 
 function AssistantView(props) {
-    const { chatMessages, onSendText, transcription } = props;
+    const { chatMessages, onSendText, transcription, statusText } = props;
     const [inputValue, setInputValue] = useState('');
     const containerRef = useRef(null);
 
@@ -1280,6 +1280,8 @@ function AssistantView(props) {
         return React.createElement('div', null, message.text || '');
     }
 
+    const statusLabel = (statusText || '').trim();
+
     return React.createElement(
         'div',
         { style: containerStyle },
@@ -1289,6 +1291,23 @@ function AssistantView(props) {
                 style: responseStyle,
                 ref: containerRef,
             },
+            statusLabel
+                ? React.createElement(
+                      'div',
+                      {
+                          style: {
+                              alignSelf: 'center',
+                              marginBottom: 6,
+                              padding: '2px 8px',
+                              borderRadius: 999,
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              fontSize: 11,
+                              opacity: 0.85,
+                          },
+                      },
+                      statusLabel,
+                  )
+                : null,
             allMessages.length === 0
                 ? React.createElement(
                       'div',
@@ -1583,6 +1602,7 @@ function App() {
             chatMessages,
             onSendText: handleSendText,
             transcription,
+            statusText,
         });
     }
 
